@@ -16,12 +16,16 @@ jobs:
         include:
           - platform: macos-13
             arch: x64
+            target: ''
           - platform: macos-14
             arch: aarch64
+            target: aarch64-apple-darwin
           - platform: ubuntu-latest
             arch: x64
+            target: ''
           - platform: windows-latest
             arch: x64
+            target: ''
     runs-on: ${{ matrix.platform }}
 
     steps:
@@ -37,7 +41,7 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -53,14 +57,29 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Set version env
+        run: echo "VERSION=${GITHUB_REF##*/}" >> $GITHUB_ENV
+
+      - name: Generate changelog
+        id: changelog
+        uses: metcalfc/changelog-generator@v4
+        with:
+          myToken: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build app with Tauri
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'WeakPassBrute v__VERSION__ (${{ matrix.platform }}-${{ matrix.arch }})'
-          releaseBody: 'See the assets to download and install this version.'
+          tagName: ${{ env.VERSION }}
+          releaseName: 'WeakPassBrute ${{ env.VERSION }} (${{ matrix.platform }}-${{ matrix.arch }})'
+          releaseBody: ${{ steps.changelog.outputs.changelog }}
           releaseDraft: false
           prerelease: false
-          target: ${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || '' }}
+          target: ${{ matrix.target }}
+
+      - name: Build .deb and .rpm (Linux only)
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          npm exec tauri build -- --target deb
+          npm exec tauri build -- --target rpm
